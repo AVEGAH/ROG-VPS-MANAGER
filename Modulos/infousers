@@ -1,6 +1,22 @@
 #!/bin/bash
 clear
-echo -e "\E[44;1;37m◇User        ◇Password      ◇limit     ◇validity \E[0m"
+
+# Check if Python is installed for the web server
+if ! command -v python3 &>/dev/null; then
+    echo "Python3 is not installed. Installing..."
+    apt-get update && apt-get install python3 -y
+fi
+
+# Create directory for HTML files
+WEB_DIR="/var/www/html/user_expiry"
+mkdir -p $WEB_DIR
+
+# Start a simple HTTP server to host user expiry pages
+echo "Starting a simple HTTP server to host user expiry pages..."
+cd /var/www/html
+nohup python3 -m http.server 8080 &
+
+echo -e "\E[44;1;37m◇User        ◇Password      ◇Limit     ◇Validity \E[0m"
 echo ""
 [[ ! -e /bin/versao ]] && rm -rf /bin/menu
 for users in `awk -F : '$3 > 900 { print $1 }' /etc/passwd |sort |grep -v "nobody" |grep -vi polkitd |grep -vi system-`
@@ -19,15 +35,19 @@ datauser=$(chage -l $users |grep -i co |awk -F : '{print $2}')
 if [ $datauser = never ] 2> /dev/null
 then
 data="\033[1;33mNunca\033[0m"
+data_html="Never"
 else
     databr="$(date -d "$datauser" +"%Y%m%d")"
     hoje="$(date -d today +"%Y%m%d")"
     if [ $hoje -ge $databr ]
     then
     data="\033[1;31mVenceu\033[0m"
+    data_html="Expired"
     else
     dat="$(date -d"$datauser" '+%Y-%m-%d')"
-    data=$(echo -e "$((($(date -ud $dat +%s)-$(date -ud $(date +%Y-%m-%d) +%s))/86400)) \033[1;37mDias\033[0m")
+    days_remaining=$((($(date -ud $dat +%s)-$(date -ud $(date +%Y-%m-%d) +%s))/86400))
+    data=$(echo -e "$days_remaining \033[1;37mDias\033[0m")
+    data_html="$days_remaining Days"
     fi
 fi
 Usuario=$(printf ' %-15s' "$users")
@@ -36,6 +56,12 @@ Limite=$(printf '%-10s' "$lim")
 Data=$(printf '%-1s' "$data")
 echo -e "\033[1;33m$Usuario \033[1;37m$Senha \033[1;37m$Limite \033[1;32m$Data\033[0m"
 echo -e "\033[0;34m◇────────────────────────────────────────────────◇\033[0m"
+
+# Generate an HTML file for each user
+echo "<html><body><h1>User: $users</h1><p>Expiry Date: $data_html</p></body></html>" > $WEB_DIR/$users.html
+
+# Display the URL to check expiry date
+echo "Expiry date URL for $users: http://$(hostname -I | awk '{print $1}'):8080/user_expiry/$users.html"
 done
 echo ""
 _tuser=$(awk -F: '$3>=1000 {print $1}' /etc/passwd | grep -v nobody | wc -l)
